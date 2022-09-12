@@ -1,0 +1,149 @@
+---
+title: "Count codes"
+author: "Ulrik Lyngs"
+format: 
+  html:
+    code-fold: true
+    toc: true
+---
+
+# Count code frequencies
+## Read in snippets and codes
+```{r}
+library(tidyverse)
+
+# read in the snippets
+all_snippets <- read_csv("2022-09-12-Joint Special Apps-Snippets.csv") |> 
+  janitor::clean_names() |> 
+  mutate(transcript = str_extract(transcript, "P\\d+")) |> # reduce the transcript name to simply 'P01' etc
+  rename(participant_id = transcript) |> 
+  # replace the parts of code names that are special characters in regex (square and regular brackets)
+  mutate(codes = str_replace_all(codes, "\\[", "<"),
+         codes = str_replace_all(codes, "\\]", ">"),
+         codes = str_replace_all(codes, "\\(", "<"),
+         codes = str_replace_all(codes, "\\)", ">"))
+
+# read in the codes and their hierarchy
+all_codes <- read_csv("2022-09-12-Joint Special Apps-Codes.csv") |> 
+  janitor::clean_names() |> 
+  mutate(code_name = str_replace_all(code_name, "\\[", "<"),
+         code_name = str_replace_all(code_name, "\\]", ">"),
+         code_name = str_replace_all(code_name, "\\(", "<"),
+         code_name = str_replace_all(code_name, "\\)", ">"))
+```
+
+## Example of counting a code
+We can run this code to return the unique participants that have a single code
+
+```{r}
+all_snippets |> 
+    filter(str_detect(codes, "SA_what->messaging & calling")) |> 
+    distinct(participant_id)
+```
+To manually get participants with more codes, we can do this for two codes, row bind the results, then take the unique ids:
+
+```{r}
+unique_ids_messaging_and_calling <- all_snippets |> 
+    filter(str_detect(codes, "SA_what->messaging & calling")) |> 
+    distinct(participant_id)
+
+unique_ids_snapchat <- all_snippets |> 
+  filter(str_detect(codes, "SA_what->Snapchat")) |> 
+  distinct(participant_id)
+
+unique_ids_whatsapp_messaging_and_snapchat <- unique_ids_messaging_and_calling |> 
+  bind_rows(unique_ids_snapchat) |>  
+  distinct(participant_id)
+
+unique_ids_whatsapp_messaging_and_snapchat
+```
+
+We can turn this into a simple function that returns the unique participants who have a code. Then we can use the `map_dfr` function to apply it for multiple codes and row bind the results together:
+
+```{r}
+return_unique_participant_ids_with_code <- function(some_code){
+  all_snippets |> 
+    filter(str_detect(codes, some_code)) |> 
+    distinct(participant_id)
+}
+
+codes_to_look_up <- c("SA_what->messaging & calling", "SA_what->Snapchat")
+
+map_dfr(codes_to_look_up, return_unique_participant_ids_with_code) |> 
+  distinct(participant_id)
+```
+
+## Comparing messaging/calling and its children, and social media and its children
+```{r}
+all_codes_messaging_and_calling <- c("SA_what->messaging & calling", 
+                                     "SA_what->WhatsApp",
+                                     "SA_what->FB Messenger",
+                                     "SA_what->Snapchat",
+                                     "SA_what->email / Gmail / Outlook", 
+                                     "SA_what->FaceTime",
+                                     "SA_what->iMessage",
+                                     "SA_what->Telegram",
+                                     "SA_what->WeChat",
+                                     "SA_what->Signal")
+
+all_codes_social_media <- c("SA_what->social media",
+                            "SA_what->Instagram",
+                            "SA_what->Facebook",
+                            "SA_what->Twitter",
+                            "SA_what->TikTok",
+                            "SA_what->Discord",
+                            "SA_what->LinkedIn")
+
+unique_messaging_and_calling <- map_dfr(all_codes_messaging_and_calling, return_unique_participant_ids_with_code) |> 
+  distinct(participant_id)
+unique_messaging_and_calling
+# 30 participants, i.e. 50%
+
+unique_social_media <- map_dfr(all_codes_social_media, return_unique_participant_ids_with_code) |> 
+  distinct(participant_id)
+unique_social_media
+# 22 participants, i.e. 37%
+
+unique_either <- unique_messaging_and_calling |> 
+  bind_rows(unique_social_media) |> 
+  distinct(participant_id)
+unique_either
+# 38 participants, i.e. 63%
+```
+
+
+## If we want to get the names of the child codes of a code
+The below takes all the second-level codes and give them a running number, then gives all its children the same number
+```{r}
+grouped_codes <- all_codes |> 
+  mutate(number = 1) |> 
+  group_by(nested_level) |> 
+  mutate(code_grouping = if_else(nested_level == ">>", cumsum(number), NA_real_)) |> 
+  ungroup() |> 
+  relocate(code_grouping) |> 
+  fill(code_grouping) |> 
+  select(code_grouping, nested_level, code_name)
+
+grouped_codes
+```
+
+Now we can pull out a level 2 code and its children by filtering by a number. For example, 'messaging & calling' is number 86:
+
+```{r}
+grouped_codes |> 
+  filter(code_grouping == 86) |> 
+  pull(code_name)
+```
+
+## If we want to use that to pull out the prevalence of some code and its children
+We can use that to easily get the number of unique ids for a code, like this:
+
+```{r}
+messaging_and_calling_codes <- grouped_codes |> 
+  filter(code_grouping == 86) |> 
+  pull(code_name)
+
+map_dfr(messaging_and_calling_codes, return_unique_participant_ids_with_code) |> 
+  distinct(participant_id)
+```
+
