@@ -116,22 +116,20 @@ unique_either
 The below takes all the second-level codes and give them a running number, then gives all its children the same number
 ```{r}
 grouped_codes <- all_codes |> 
-  mutate(number = 1) |> 
   group_by(nested_level) |> 
-  mutate(code_grouping = if_else(nested_level == ">>", cumsum(number), NA_real_)) |> 
+  mutate(code_grouping = if_else(nested_level != ">>>", code_name, NA_character_)) |> 
   ungroup() |> 
   relocate(code_grouping) |> 
   fill(code_grouping) |> 
   select(code_grouping, nested_level, code_name)
 
-grouped_codes
 ```
 
-Now we can pull out a level 2 code and its children by filtering by a number. For example, 'messaging & calling' is number 86:
+Now we can pull out a level 2 code and its children by filtering by a code name. For example, 'messaging & calling':
 
 ```{r}
 grouped_codes |> 
-  filter(code_grouping == 86) |> 
+  filter(code_grouping == "SA_what->messaging & calling") |> 
   pull(code_name)
 ```
 
@@ -140,7 +138,7 @@ We can use that to easily get the number of unique ids for a code, like this:
 
 ```{r}
 messaging_and_calling_codes <- grouped_codes |> 
-  filter(code_grouping == 86) |> 
+  filter(code_grouping == "SA_what->messaging & calling") |> 
   pull(code_name)
 
 map_dfr(messaging_and_calling_codes, return_unique_participant_ids_with_code) |> 
