@@ -145,3 +145,33 @@ map_dfr(messaging_and_calling_codes, return_unique_participant_ids_with_code) |>
   distinct(participant_id)
 ```
 
+Let's put that in a function as we'll need it in a sec:
+```{r}
+pull_parent_and_child_codes <- function(some_parent_code){
+  grouped_codes |> 
+    filter(code_grouping == some_parent_code) |> 
+    pull(code_name)
+}
+```
+
+
+## Count the 'what' categories
+```{r}
+what_categories <- grouped_codes |> 
+  filter(str_detect(code_name, "SA_what"),
+         nested_level == ">>",
+         !(code_name %in% c("SA_what -> UL: no special meaning", 	"SA_what->has been special", "SA_what->MS: special apps folder"))) |> 
+  select(code_name)
+
+what_categories |> 
+  rename(category = code_name) |> 
+  rowwise() |> 
+  mutate(parent_and_children = list(pull_parent_and_child_codes(category)),
+         unique_participants = map_dfr(parent_and_children, return_unique_participant_ids_with_code) |> distinct() |> nrow(),
+         ptc = (unique_participants/60)*100) |> 
+  arrange(desc(unique_participants)) 
+  
+
+
+```
+
